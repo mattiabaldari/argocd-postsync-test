@@ -1,10 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: postsync-check
+  generateName: postsync-check-   # nome unico a ogni sync: evita che ArgoCD legga lo stato del Job vecchio
+  labels:
+    app: postsync-check
   annotations:
     argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation   # tiene i log fino al sync successivo
+    # nessuna delete policy: i Job restano (ok per il test), teardown pulisce tutto
 spec:
   backoffLimit: 0
   template:

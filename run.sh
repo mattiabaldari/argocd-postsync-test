@@ -19,9 +19,14 @@ case "${1:-}" in
   watch)  # in un altro terminale durante il bump
     kubectl -n $NS get pods -w --output-watch-events -L version ;;   # include anche il pod del Job PostSync
   logs)
-    echo "attendo che il Job finisca..."
-    until kubectl -n $NS get job postsync-check -o jsonpath='{.status.conditions[*].type}' 2>/dev/null | grep -qE 'Complete|Failed'; do sleep 3; done
-    kubectl -n $NS logs job/postsync-check
+    JOB=$(kubectl -n $NS get jobs -l app=postsync-check --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+    echo "ultimo Job: $JOB - attendo che finisca..."
+    until kubectl -n $NS get job $JOB -o jsonpath='{.status.conditions[*].type}' 2>/dev/null | grep -qE 'Complete|Failed'; do sleep 3; done
+    kubectl -n $NS logs job/$JOB
+    echo "--- stato Job (k8s): $(kubectl -n $NS get job $JOB -o jsonpath='{.status.conditions[-1:].type}')"
+    echo "--- hook visto da ArgoCD:"
+    kubectl -n argocd get app hooktest -o jsonpath='{range .status.operationState.syncResult.resources[?(@.kind=="Job")]}{.name} {.hookPhase} {.message}{"\n"}{end}'
+    echo "--- esito sync ArgoCD:"
     kubectl -n argocd get app hooktest -o jsonpath='{.status.operationState.phase}{" "}{.status.operationState.message}{"\n"}' ;;
   teardown)
     kind delete cluster --name argo-hook ;;
