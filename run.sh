@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uso: ./run.sh setup | ./run.sh bump v2 | ./run.sh logs | ./run.sh watch | ./run.sh teardown
+# Uso: ./run.sh setup | bump vN | watch | logs | argo | teardown
 set -euo pipefail
 NS=hooktest
 case "${1:-}" in
@@ -19,7 +19,9 @@ case "${1:-}" in
   watch)  # in un altro terminale durante il bump
     kubectl -n $NS get pods -w --output-watch-events -L version ;;   # include anche il pod del Job PostSync
   logs)
-    JOB=$(kubectl -n $NS get jobs -l app=postsync-check --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+    echo "attendo che ArgoCD crei il Job PostSync (parte solo a rollout finito)..."
+    until [ -n "$(kubectl -n $NS get jobs -l app=postsync-check -o name 2>/dev/null)" ]; do sleep 3; done
+    JOB=$(kubectl -n $NS get jobs -l app=postsync-check --sort-by=.metadata.creationTimestamp -o name | tail -1 | cut -d/ -f2)
     echo "ultimo Job: $JOB - attendo che finisca..."
     until kubectl -n $NS get job $JOB -o jsonpath='{.status.conditions[*].type}' 2>/dev/null | grep -qE 'Complete|Failed'; do sleep 3; done
     kubectl -n $NS logs job/$JOB
@@ -28,7 +30,15 @@ case "${1:-}" in
     kubectl -n argocd get app hooktest -o jsonpath='{range .status.operationState.syncResult.resources[?(@.kind=="Job")]}{.name} {.hookPhase} {.message}{"\n"}{end}'
     echo "--- esito sync ArgoCD:"
     kubectl -n argocd get app hooktest -o jsonpath='{.status.operationState.phase}{" "}{.status.operationState.message}{"\n"}' ;;
+  argo)   # cosa ha registrato ArgoCD sull'ultimo sync + storico
+    kubectl -n argocd get app hooktest -o jsonpath='{"phase="}{.status.operationState.phase}{"  retryCount="}{.status.operationState.retryCount}{"\nmessage="}{.status.operationState.message}{"\nrevision="}{.status.operationState.syncResult.revision}{"\nsync="}{.status.sync.status}{"  health="}{.status.health.status}{"\n"}'
+    echo "--- hook (ArgoCD):"
+    kubectl -n argocd get app hooktest -o jsonpath='{range .status.operationState.syncResult.resources[?(@.hookType=="PostSync")]}{.name} {.hookPhase} {.message}{"\n"}{end}'
+    echo "--- Job nel cluster:"
+    kubectl -n $NS get jobs -l app=postsync-check -o custom-columns='NAME:.metadata.name,CREATED:.metadata.creationTimestamp,STATUS:.status.conditions[-1].type'
+    echo "--- storico sync (ultimi 3):"
+    kubectl -n argocd get app hooktest -o jsonpath='{range .status.history[-3:]}{.id} {.revision} {.deployedAt}{"\n"}{end}' ;;
   teardown)
     kind delete cluster --name argo-hook ;;
-  *) echo "uso: $0 setup|bump vN|watch|logs|teardown"; exit 1 ;;
+  *) echo "uso: $0 setup|bump vN|watch|logs|argo|teardown"; exit 1 ;;
 esac

@@ -17,13 +17,13 @@ spec:
     metadata:
       labels:
         app: echo
-        version: v2          # <-- bump insieme a -text
+        version: v3          # <-- bump insieme a -text
     spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: echo
           image: hashicorp/http-echo:1.0
-          args: ["-text=v2"]  # <-- bump
+          args: ["-text=v3"]  # <-- bump
           ports:
             - containerPort: 5678
           readinessProbe:

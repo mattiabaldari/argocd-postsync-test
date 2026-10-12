@@ -16,6 +16,9 @@ spec:
       containers:
         - name: check
           image: alpine/k8s:1.31.13   # kubectl + curl
+          env:
+            - name: FORCE_FAIL        # "1" = il hook fallisce sempre (prova: hook fallito -> sync fallito?)
+              value: "1"
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -36,4 +39,5 @@ spec:
               for i in $(seq 50); do curl -s --max-time 2 echo:5678; done | sort | uniq -c
               for i in $(seq 50); do curl -s --max-time 2 echo:5678; done | grep -vqx "$EXPECTED" && FAIL=1
               [ $FAIL -eq 0 ] && echo "=== OK: solo $EXPECTED servito" || echo "=== FAIL: versione vecchia ancora servita"
+              if [ "$FORCE_FAIL" = "1" ]; then echo "=== FORCED FAIL (exit 1)"; exit 1; fi
               exit $FAIL
