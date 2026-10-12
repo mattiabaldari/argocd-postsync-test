@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postsync-check
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation   # tiene i log fino al sync successivo
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: hook-checker
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: alpine/k8s:1.31.13   # kubectl + curl
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -u
+              EXPECTED=$(kubectl get deploy echo -o jsonpath='{.spec.template.metadata.labels.version}')
+              echo "=== PostSync start $(date -u +%H:%M:%S) expected=$EXPECTED"
+              kubectl get deploy echo -o jsonpath='{"gen="}{.metadata.generation}{" observed="}{.status.observedGeneration}{" replicas="}{.status.replicas}{" updated="}{.status.updatedReplicas}{" available="}{.status.availableReplicas}{"\n"}'
+              kubectl get rs -l app=echo
+              kubectl get pods -l app=echo -o custom-columns='NAME:.metadata.name,VER:.metadata.labels.version,READY:.status.containerStatuses[0].ready,DELETING:.metadata.deletionTimestamp'
+              FAIL=0
+              echo "--- ready endpoints"
+              for ip in $(kubectl get endpointslices -l kubernetes.io/service-name=echo \
+                  -o jsonpath='{range .items[*].endpoints[?(@.conditions.ready==true)]}{.addresses[0]}{"\n"}{end}'); do
+                r=$(curl -s --max-time 2 "$ip:5678")
+                echo "$ip -> $r"; [ "$r" = "$EXPECTED" ] || FAIL=1
+              done
+              echo "--- 50 req via Service"
+              for i in $(seq 50); do curl -s --max-time 2 echo:5678; done | sort | uniq -c
+              for i in $(seq 50); do curl -s --max-time 2 echo:5678; done | grep -vqx "$EXPECTED" && FAIL=1
+              [ $FAIL -eq 0 ] && echo "=== OK: solo $EXPECTED servito" || echo "=== FAIL: versione vecchia ancora servita"
+              exit $FAIL

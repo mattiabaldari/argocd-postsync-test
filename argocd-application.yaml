@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hooktest
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mattiabaldari/argocd-postsync-test
+    targetRevision: HEAD
+    path: app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hooktest
+  syncPolicy:
+    automated: {prune: true}
+    syncOptions: [CreateNamespace=true]

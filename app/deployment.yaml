@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo
+spec:
+  replicas: 5
+  progressDeadlineSeconds: 180
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: echo
+  template:
+    metadata:
+      labels:
+        app: echo
+        version: v1          # <-- bump insieme a -text
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: echo
+          image: hashicorp/http-echo:1.0
+          args: ["-text=v1"]  # <-- bump
+          ports:
+            - containerPort: 5678
+          readinessProbe:
+            httpGet: {path: /, port: 5678}
+            initialDelaySeconds: 10   # rollout lento: ~5 x 10s
+            periodSeconds: 2
+          lifecycle:
+            preStop:
+              sleep: {seconds: 30}    # pod vecchi restano Terminating a lungo (K8s >= 1.30)
